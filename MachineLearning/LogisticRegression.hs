@@ -1,51 +1,38 @@
-module MachineLearning.LogisticRegression where
+module MachineLearning.LogisticRegression
+    (State(..),
+     train,
+    )
+where
 
-import MachineLearning.Common
+import qualified Data.Foldable                     as F
+import           Data.Maybe                        (fromJust)
+import qualified Data.Sequence                     as S
+import qualified MachineLearning.Protobufs.Example as PB
 
-import Data.Vector as V
-import qualified Data.List
-import Data.Function
-
-data LogisticRegressionState = LogisticRegressionState {
-      weights :: V.Vector Double
+data State = State {
+      weights      :: S.Seq Double
     , learningRate :: Double
     } deriving (Show, Eq, Read)
 
-dotProduct :: Num a => Vector a -> Vector a -> a
-dotProduct a b = V.sum $ V.zipWith (*) a b
+dotProduct :: Num b => S.Seq b -> S.Seq b -> b
+dotProduct x y = F.foldl (+) 0 (S.zipWith (*) x y)
 
-onlineLogisticRegression :: Example -> LogisticRegressionState -> LogisticRegressionState
-onlineLogisticRegression example oldState = newState where
-    newState = LogisticRegressionState {weights=newWeights, learningRate=newLearningRate}
+train :: PB.Example -> State -> State
+train example oldState =  State { weights=newWeights
+                                , learningRate=newLearningRate
+                                } where
     newWeights = computeUpdate example oldState
     newLearningRate = learningRate oldState
 
-predict :: Example -> LogisticRegressionState -> Double
+predict :: PB.Example -> State -> Double
 predict example state = 1.0 / (1.0 + exp (-1 * logit)) where
-    logit = dotProduct (features example) (weights state)
+    logit = dotProduct (PB.features example) (weights state)
 
-gradients :: Example -> LogisticRegressionState -> Vector Double
+gradients :: PB.Example -> State -> S.Seq Double
 gradients example state =
-    V.map (\x -> learningRate state * update * x) (features example) where
-        update = label example - prediction
+    fmap (\x -> learningRate state * update * x) (PB.features example) where
+        update = fromJust (PB.label example) -  prediction
         prediction = predict example state
 
-computeUpdate :: Example -> LogisticRegressionState -> Vector Double
-computeUpdate example state = V.zipWith (+) (gradients example state) (weights state)
-
-batchLogisticRegression :: Vector Example -> Int -> LogisticRegressionState -> LogisticRegressionState
-batchLogisticRegression _ 0 state = state
-batchLogisticRegression  examples n state =
-    batchLogisticRegression examples (n - 1) newState where
-        newState = runBatchRound examples state
-
-runBatchRound ::  Vector Example -> LogisticRegressionState -> LogisticRegressionState
-runBatchRound examples initialState = LogisticRegressionState {
-                                        learningRate=learningRate initialState,
-                                        weights=weights
-                                      } where
-    weights = V.map (* scalingFactor) accumulatedGradients
-    scalingFactor = 1.0 / fromIntegral (V.length examples)
-    accumulatedGradients = V.foldl (V.zipWith (+)) emptyVector exampleGradients
-    exampleGradients = V.map (`gradients` initialState) examples
-    emptyVector = V.replicate (V.length examples) 0
+computeUpdate :: PB.Example -> State -> S.Seq Double
+computeUpdate example state = S.zipWith (+) (gradients example state) (weights state)

@@ -1,0 +1,151 @@
+package protobufs;
+
+enum LossFunction {
+  LOGIT = 1;
+  LEAST_ABSOLUTE_DEVIATION = 2;
+  HUBER = 3;
+}
+
+enum Rescaling {
+  NONE = 1;
+  AVERAGING = 2;
+  LOG_ODDS = 3;
+}
+
+message Feature {
+  optional int64 feature = 1;
+  optional double value = 2;
+}
+
+message Example {
+  optional double label = 1;
+  optional double weightedLabel = 2;
+  repeated double features = 3 [packed=true];
+}
+
+message TrainingData {
+  repeated Example train = 1;
+  repeated Example test = 2;
+}
+
+message TreeNode {
+  // feature to split on
+  optional int64 feature = 1;
+  // value to split on
+  optional double splitValue = 2;
+
+  optional TreeNode left = 3;
+  optional TreeNode right = 4;
+
+  optional double leafValue = 5;
+
+  optional Annotation annotation = 6; 
+}
+
+message Annotation {
+  optional int64 numExamples = 1;
+  optional double averageGain = 2;
+
+  // Proportion of examples on the left branch.
+  // Used to annotate branch probabilities in compiled tree models 
+  optional double leftFraction = 3;
+}
+
+message Forest {
+  repeated TreeNode trees = 1;
+  optional Rescaling rescaling = 2 [default=NONE];
+}
+
+message SplittingConstraints {
+  optional int64 maximumLevels = 1;
+  optional double minimumAverageGain = 2;
+  optional int64 minimumSamplesAtLeaf = 3;
+}
+
+message PruningConstraints {
+  optional int64 crossValidationFolds = 1;
+}
+
+message InfluenceTrimmingConfig {
+  optional double alpha = 1;
+  optional int64 warmupRounds = 2;
+}
+
+message LossFunctionConfig {
+  optional LossFunction lossFunction = 1;
+  optional double huberAlpha = 2;
+}
+
+message ShrinkageConfig {
+  optional double shrinkage = 1;
+}
+
+message StochasticityConfig {
+  // Take a random sample of training data per round
+  // Used in stochastic gradient boosting
+  optional double perRoundSamplingRate = 1;
+
+  // Proportion of examples to draw boostrap sample from
+  // Used in random forests
+  optional double exampleBoostrapProportion = 2;
+
+  // Number of features to examine at each splitting step
+  // Used in random forests
+  optional int64 featureSampleSize = 3;
+}
+
+enum Algorithm {
+  BOOSTING = 1;
+  RANDOM_FOREST = 2;
+}
+
+message ForestConfig {
+  optional int64 numWeakLearners = 1;
+  optional SplittingConstraints splittingConstraints = 2;
+  optional LossFunctionConfig lossFunctionConfig = 3;
+  optional InfluenceTrimmingConfig influenceTrimmingConfig = 4;
+  optional ShrinkageConfig shrinkageConfig = 5;
+  optional StochasticityConfig stochasticityConfig = 6;
+  optional Algorithm algorithm = 7;
+}
+
+
+enum TrainingStatus {
+  UNCLAIMED = 1;
+  PROCESSING = 2;
+  FINISHED = 3;
+}
+
+message GridFsConfig {
+  optional string database = 1;
+  optional string collection = 2 [default="fs"];
+  optional string file = 3;
+}
+
+enum DataSource {
+  GRIDFS = 1;
+}
+
+message DataSourceConfig {
+  optional DataSource dataSource = 1;
+  optional GridFsConfig gridFsConfig = 2;
+}
+
+message EpochResult {
+  optional double roc = 1;
+  optional double logScore = 2;
+  optional double normalizedEntropy = 3;
+  optional double calibration = 4;
+}
+
+message TrainingResults {
+  repeated EpochResult epochResults = 1;
+}
+
+message TrainingRow {
+  optional ForestConfig forestConfig = 1;
+  optional Forest forest = 2;
+  optional DataSourceConfig dataSourceConfig = 3;
+  optional TrainingStatus trainingStatus = 4;
+  optional TrainingResults trainingResults = 5;
+}
