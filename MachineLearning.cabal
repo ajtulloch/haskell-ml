@@ -48,7 +48,7 @@ cabal-version:       >=1.10
 
 library
   -- Modules exported by the library.
-  exposed-modules:     MachineLearning.DecisionTrees, MachineLearning.LogisticRegression
+  exposed-modules:     MachineLearning.DecisionTrees, MachineLearning.LogisticRegression, MachineLearning.Util, MachineLearning.Hopfield, MachineLearning.HopfieldDemonstration
   
   -- Modules included in this library but not exported.
   -- other-modules:       
@@ -57,7 +57,7 @@ library
   -- other-extensions:    
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.6 && <4.7, vector >=0.10 && <0.11, containers, protocol-buffers
+  build-depends:       base >=4.6 && <4.7, vector >=0.10 && <0.11, containers, protocol-buffers, matrix, MonadRandom
   
   -- Directories containing source files.
   -- hs-source-dirs:      
