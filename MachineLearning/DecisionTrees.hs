@@ -1,6 +1,7 @@
 module MachineLearning.DecisionTrees
     (LossFunction(..),
      Examples,
+     logitLoss,
      trainBoosting,
      predictForest) where
 
@@ -192,35 +193,32 @@ predictForest :: V.Vector PB.TreeNode -> V.Vector Double -> Double
 predictForest trees = predictForest' (V.map fromPBTree' trees)
 
 -- Typeclass representing a usable loss function
-class LossFunction a where
-    -- Prior maps
-    prior :: a -> Examples -> Double
-    leaf :: a -> Examples -> Double
-    weight :: a -> Trees -> PB.Example -> Double
-
-data LogitLoss = LogitLoss deriving (Show, Eq)
+data LossFunction = LossFunction {
+      prior  :: Examples -> Double,
+      leaf   :: Examples -> Double,
+      weight :: Trees -> PB.Example -> Double
+    }
 
 -- From Algorithm 5 in
 -- http://www-stat.stanford.edu/~jhf/ftp/trebst.pdf
-instance LossFunction LogitLoss where
-   prior _ examples =
-       0.5 * log ((1 + averageLabel) / (1 - averageLabel))
-     where
-       averageLabel = (V.sum . V.map label') examples /
-                      fromIntegral (V.length examples)
+logitLoss :: LossFunction
+logitLoss = LossFunction {prior = logitPrior, leaf = logitLeaf, weight = logitWeight }
+    where
+      logitWeight trees example = numerator / denominator
+          where
+            numerator = 2 * label' example
+            denominator = 1 + exp (2 * label' example * prediction)
+            prediction = predictForest' trees (features' example)
+      logitLeaf examples = numerator / denominator
+          where
+            numerator = (V.sum . V.map label') examples
+            denominator = (V.sum . V.map influence) examples
+            influence e = abs (label' e) * (2 - abs (label' e))
+      logitPrior examples =  0.5 * log ((1 + averageLabel) / (1 - averageLabel))
+          where
+            averageLabel = (V.sum . V.map label') examples / fromIntegral (V.length examples)
 
-   leaf _ examples = numerator / denominator
-     where
-       numerator = (V.sum . V.map label') examples
-       denominator = (V.sum . V.map influence) examples
-       influence e = abs (label' e) * (2 - abs (label' e))
-   weight _ trees example = numerator / denominator
-     where
-       numerator = 2 * label' example
-       denominator = 1 + exp (2 * label' example * prediction)
-       prediction = predictForest' trees (features' example)
-
-runBoostingRound :: LossFunction a => a
+runBoostingRound :: LossFunction
                  -> PB.SplittingConstraints
                  -> Examples
                  -> Trees
@@ -231,7 +229,7 @@ runBoostingRound lossFunction splittingConstraints examples forest =
     weightedExamples = V.map (\e -> e {PB.label=Just $ weightedLabel e}) examples
     weightedLabel = weight lossFunction forest
 
-trainBoosting :: (LossFunction a) => a
+trainBoosting :: LossFunction
               -> Int
               -> PB.SplittingConstraints
               -> Examples
