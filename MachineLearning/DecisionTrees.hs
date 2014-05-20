@@ -256,11 +256,13 @@ runBoostingRound lossFunction splittingConstraints examples forest =
     weightedLabel = weight lossFunction forest
 
 -- | Trains a boosted decision tree with the given parameters
-trainBoosting :: LossFunction
-              -> Int
-              -> PB.SplittingConstraints
-              -> Examples
-              -> V.Vector PB.TreeNode
+trainBoosting
+  :: (Enum b, Num b) =>
+     LossFunction
+     -> b
+     -> PB.SplittingConstraints
+     -> V.Vector PB.Example
+     -> V.Vector PB.TreeNode
 trainBoosting lossFunction numRounds splittingConstraints examples =
     V.map asPBTree' trees
   where
@@ -277,11 +279,12 @@ data RandomForestConfig = RandomForestConfig {
     }
 
 -- | Trains a random forest with the given constraints.
-trainRandomForest :: (MonadRandom m) =>
-                    RandomForestConfig
-                  -> PB.SplittingConstraints
-                  -> Examples
-                  -> m (V.Vector PB.TreeNode)
+trainRandomForest
+  :: MonadRandom m =>
+     RandomForestConfig
+     -> PB.SplittingConstraints
+     -> V.Vector PB.Example
+     -> m (V.Vector PB.TreeNode)
 trainRandomForest RandomForestConfig{..} splittingConstraints examples =
       V.mapM addSample (V.enumFromTo 1 _numRounds)
     where
