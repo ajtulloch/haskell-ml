@@ -20,8 +20,10 @@ dotProduct x y = V.foldl (+) 0 (V.zipWith (*) x y)
 -- QuickCheck properties
 normPositive :: (Floating a, Ord a) => V.Vector a -> Bool
 normPositive x = norm x >= 0
+
 symmetric :: Eq a => (t -> t -> a) -> t -> t -> Bool
 symmetric f x y = f y x == f x y
+
 dotProductSymmmetric  :: (Eq a, Num a) => V.Vector a -> V.Vector a -> Bool
 dotProductSymmmetric = symmetric dotProduct
 
@@ -33,4 +35,3 @@ innerProduct :: (Num a) => M.Matrix a -> V.Vector a -> a
 innerProduct m v = (M.transpose cv * m * cv) M.! (1, 1)
   where
     cv = M.colVector v
-

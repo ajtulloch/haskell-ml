@@ -1,8 +1,25 @@
-module MachineLearning.DecisionTrees
-    (LossFunction(..),
+{-# LANGUAGE RecordWildCards #-}
+
+{-|
+Module      : MachineLearning.DecisionTrees
+Description : Gradient Boosting and Random Forests
+Copyright   : (c) Andrew Tulloch, 2014
+License     : MIT
+Maintainer  : andrew@tullo.ch
+Stability   : experimental
+Portability : POSIX
+
+Decision Tree implements random forests and gradient boosting.
+ -}
+module MachineLearning.DecisionTrees (
+     -- * Types
      Examples,
+     -- * Loss Functions
+     LossFunction(..),
      logitLoss,
+     -- * Training
      trainBoosting,
+     -- * Prediction
      predictForest) where
 
 import           Data.Function                                  (on)
@@ -18,6 +35,10 @@ import qualified MachineLearning.Protobufs.Example              as PB
 import qualified MachineLearning.Protobufs.SplittingConstraints as PB
 import qualified MachineLearning.Protobufs.TreeNode             as PB
 import           Text.ProtocolBuffers.Header                    (defaultValue)
+
+import           Control.Applicative
+import           Control.Monad
+import           Control.Monad.Random
 
 data DecisionTree = Leaf {
       _value :: Double
@@ -40,7 +61,10 @@ data LossState = LossState {
     , _numExamples          :: Int
     }
 
+-- | A vector of examples.
 type Examples = V.Vector PB.Example
+
+-- | A vector of decision trees.
 type Trees = V.Vector DecisionTree
 
 informationGain :: Examples -> V.Vector Double
@@ -189,20 +213,22 @@ predictForest' :: Trees -> V.Vector Double -> Double
 predictForest' trees featureVector =
     (V.sum . V.map (`predict'` featureVector)) trees
 
+-- | Computes the average activation for each leaf node.
 predictForest :: V.Vector PB.TreeNode -> V.Vector Double -> Double
 predictForest trees = predictForest' (V.map fromPBTree' trees)
 
--- Typeclass representing a usable loss function
+-- | A record that is modified for various loss function
+-- implementations.
 data LossFunction = LossFunction {
       prior  :: Examples -> Double,
       leaf   :: Examples -> Double,
       weight :: Trees -> PB.Example -> Double
     }
 
--- From Algorithm 5 in
--- http://www-stat.stanford.edu/~jhf/ftp/trebst.pdf
+-- | logitLoss is a loss function that implements Algorithm 5 in
+-- <http://www-stat.stanford.edu/~jhf/ftp/trebst.pdf>
 logitLoss :: LossFunction
-logitLoss = LossFunction {prior = logitPrior, leaf = logitLeaf, weight = logitWeight }
+logitLoss = LossFunction logitPrior logitLeaf logitWeight
     where
       logitWeight trees example = numerator / denominator
           where
@@ -229,6 +255,7 @@ runBoostingRound lossFunction splittingConstraints examples forest =
     weightedExamples = V.map (\e -> e {PB.label=Just $ weightedLabel e}) examples
     weightedLabel = weight lossFunction forest
 
+-- | Trains a boosted decision tree with the given parameters
 trainBoosting :: LossFunction
               -> Int
               -> PB.SplittingConstraints
@@ -238,9 +265,29 @@ trainBoosting lossFunction numRounds splittingConstraints examples =
     V.map asPBTree' trees
   where
     trees =
-        V.foldl addTree (priorTree examples) (V.replicate numRounds (0 :: Int))
+        V.foldl addTree (priorTree examples) (V.enumFromTo 1 numRounds)
     priorTree = V.singleton . Leaf . prior lossFunction
     addTree currentForest _ = V.snoc currentForest weakLearner
       where
-        weakLearner =
-            runBoostingRound lossFunction splittingConstraints examples currentForest
+        weakLearner = runBoostingRound lossFunction splittingConstraints examples currentForest
+
+data RandomForestConfig = RandomForestConfig {
+      _numRounds       :: Int,
+      _exampleFraction :: Double
+    }
+
+-- | Trains a random forest with the given constraints.
+trainRandomForest :: (MonadRandom m) =>
+                    RandomForestConfig
+                  -> PB.SplittingConstraints
+                  -> Examples
+                  -> m (V.Vector PB.TreeNode)
+trainRandomForest RandomForestConfig{..} splittingConstraints examples =
+      V.mapM addSample (V.enumFromTo 1 _numRounds)
+    where
+      numSubsampledExamples = ceiling $ (fromIntegral . V.length) examples * _exampleFraction
+      averageLabel e = (V.sum . V.map label') e / fromIntegral (V.length e)
+      weakLearner = buildTree averageLabel splittingConstraints
+      addSample _ = do
+        candidateExamples <- replicateM numSubsampledExamples (uniform $ V.toList examples)
+        return $ asPBTree' $ weakLearner (V.fromList candidateExamples)

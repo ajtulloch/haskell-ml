@@ -1,26 +1,29 @@
-{-# LANGUAGE BangPatterns, DeriveDataTypeable, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module MachineLearning.Protobufs.TreeNode (TreeNode(..)) where
-import Prelude ((+), (/))
-import qualified Prelude as Prelude'
-import qualified Data.Typeable as Prelude'
-import qualified Data.Data as Prelude'
-import qualified Text.ProtocolBuffers.Header as P'
+import qualified Data.Data                            as Prelude'
+import qualified Data.Typeable                        as Prelude'
 import qualified MachineLearning.Protobufs.Annotation as Protobufs (Annotation)
- 
+import           Prelude                              ((+), (/))
+import qualified Prelude                              as Prelude'
+import qualified Text.ProtocolBuffers.Header          as P'
+
 data TreeNode = TreeNode{feature :: !(P'.Maybe P'.Int64), splitValue :: !(P'.Maybe P'.Double), left :: !(P'.Maybe TreeNode),
                          right :: !(P'.Maybe TreeNode), leafValue :: !(P'.Maybe P'.Double),
                          annotation :: !(P'.Maybe Protobufs.Annotation)}
               deriving (Prelude'.Show, Prelude'.Eq, Prelude'.Ord, Prelude'.Typeable, Prelude'.Data)
- 
+
 instance P'.Mergeable TreeNode where
   mergeAppend (TreeNode x'1 x'2 x'3 x'4 x'5 x'6) (TreeNode y'1 y'2 y'3 y'4 y'5 y'6)
    = TreeNode (P'.mergeAppend x'1 y'1) (P'.mergeAppend x'2 y'2) (P'.mergeAppend x'3 y'3) (P'.mergeAppend x'4 y'4)
       (P'.mergeAppend x'5 y'5)
       (P'.mergeAppend x'6 y'6)
- 
+
 instance P'.Default TreeNode where
   defaultValue = TreeNode P'.defaultValue P'.defaultValue P'.defaultValue P'.defaultValue P'.defaultValue P'.defaultValue
- 
+
 instance P'.Wire TreeNode where
   wireSize ft' self'@(TreeNode x'1 x'2 x'3 x'4 x'5 x'6)
    = case ft' of
@@ -67,12 +70,12 @@ instance P'.Wire TreeNode where
                     (\ !new'Field -> old'Self{annotation = P'.mergeAppend (annotation old'Self) (Prelude'.Just new'Field)})
                     (P'.wireGet 11)
              _ -> let (field'Number, wire'Type) = P'.splitWireTag wire'Tag in P'.unknown field'Number wire'Type old'Self
- 
+
 instance P'.MessageAPI msg' (msg' -> TreeNode) TreeNode where
   getVal m' f' = f' m'
- 
+
 instance P'.GPB TreeNode
- 
+
 instance P'.ReflectDescriptor TreeNode where
   getMessageInfo _ = P'.GetMessageInfo (P'.fromDistinctAscList []) (P'.fromDistinctAscList [8, 17, 26, 34, 41, 50])
   reflectDescriptorInfo _
