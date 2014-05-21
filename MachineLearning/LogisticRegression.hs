@@ -1,22 +1,36 @@
+{-|
+Module      : MachineLearning.LogisticRegression
+Description : Gradient Boosting and Random Forests
+Copyright   : (c) Andrew Tulloch, 2014
+License     : MIT
+Maintainer  : andrew@tullo.ch
+Stability   : experimental
+Portability : POSIX
+
+Implements simple logistic regression
+ -}
 module MachineLearning.LogisticRegression
-    (State(..),
+    (-- * Types
+     State(..),
+     -- * Training
      train,
+     -- * Prediction
      predict)
 where
 
-import qualified Data.Foldable                     as F
 import           Data.Maybe                        (fromJust)
-import qualified Data.Sequence                     as S
+import           Data.Vector                       as V
 import qualified MachineLearning.Protobufs.Example as PB
+import           MachineLearning.Util
 
+-- | Maintains the state for logistic regression models.
 data State = State {
-      _weights      :: S.Seq Double
+      _weights      :: V.Vector Double
     , _learningRate :: Double
     } deriving (Show, Eq, Read)
 
-dotProduct :: Num b => S.Seq b -> S.Seq b -> b
-dotProduct x y = F.foldl (+) 0 (S.zipWith (*) x y)
 
+-- | Updates the logistic regression model with a new example.
 train :: PB.Example -> State -> State
 train example oldState =
     State { _weights=newWeights
@@ -26,18 +40,19 @@ train example oldState =
     newWeights = computeUpdate oldState example
     newLearningRate = _learningRate oldState
 
-predict ::  State -> PB.Example -> Double
-predict state example = 1.0 / (1.0 + exp (-1 * logit))
+-- | Computes the prediction for the trained model on the given
+predict ::  State -> V.Vector Double -> Double
+predict state features = 1.0 / (1.0 + exp (-1 * logit))
   where
-    logit = dotProduct (PB.features example) (_weights state)
+    logit = dotProduct features (_weights state)
 
-gradients :: State -> PB.Example -> S.Seq Double
+gradients :: State -> PB.Example -> Vector Double
 gradients state example =
-    fmap (\x -> _learningRate state * update * x) (PB.features example)
+    fmap (\x -> _learningRate state * gradient * x) (features' example)
   where
-    update = fromJust (PB.label example) -  prediction
-    prediction = predict state example
+    gradient = fromJust (PB.label example) -  prediction
+    prediction = predict state (features' example)
 
-computeUpdate :: State -> PB.Example -> S.Seq Double
+computeUpdate :: State -> PB.Example -> Vector Double
 computeUpdate state example =
-    S.zipWith (+) (gradients state example) (_weights state)
+    V.zipWith (+) (gradients state example) (_weights state)

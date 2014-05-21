@@ -27,9 +27,10 @@ import           Data.Function                                  (on)
 import           Data.List                                      (sortBy)
 import           Data.Maybe                                     (fromJust,
                                                                  isJust)
-import qualified Data.Sequence                                  as S
 import           Data.Vector                                    ((!))
 import qualified Data.Vector                                    as V
+
+import           MachineLearning.Util
 
 -- Protocol Buffer records
 import qualified MachineLearning.Protobufs.Example              as PB
@@ -83,16 +84,6 @@ informationGain examples = V.zipWith gain forwards backwards
                                      , _sumSquaredDivergence=0
                                      , _numExamples=0
                                      }
-
--- Convenience accessors for label and feature from Protobuf generated
--- code to
-label' :: PB.Example -> Double
-label' e = fromJust $ PB.label e
-
-features' :: PB.Example -> V.Vector Double
-features' example = V.generate (S.length features) (S.index features)
-  where
-    features = PB.features example
 
 asPBTree' :: DecisionTree -> PB.TreeNode
 asPBTree' (Leaf value) = defaultValue { PB.leafValue = Just value }
@@ -295,7 +286,7 @@ withVector :: Monad m => ([a] -> m [b]) -> V.Vector a -> m (V.Vector b)
 withVector f xs = liftM V.fromList (f (V.toList xs))
 
 sampleWithReplacement :: MonadRandom m => Int -> V.Vector a -> m (V.Vector a)
-sampleWithReplacement n = withVector (replicateM n . uniform) -- liftM V.fromList $ replicateM n (uniform (V.toList xs))
+sampleWithReplacement n = withVector (replicateM n . uniform)
 
 sampleWithoutReplacement :: (MonadRandom m) => Int -> V.Vector a -> m (V.Vector a)
 sampleWithoutReplacement n = withVector (liftM (take n) . shuffleM)
