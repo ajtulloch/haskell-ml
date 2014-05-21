@@ -19,6 +19,7 @@ module MachineLearning.DecisionTrees (
      logitLoss,
      -- * Training
      trainBoosting,
+     trainRandomForest,
      -- * Prediction
      predictForest) where
 
@@ -36,9 +37,10 @@ import qualified MachineLearning.Protobufs.SplittingConstraints as PB
 import qualified MachineLearning.Protobufs.TreeNode             as PB
 import           Text.ProtocolBuffers.Header                    (defaultValue)
 
-import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.Random
+import           System.Random.Shuffle
+
 
 data DecisionTree = Leaf {
       _value :: Double
@@ -140,9 +142,11 @@ findBestSplit examples feature =
     informationGains = informationGain samples
     splitPoint = V.maxIndex informationGains
 
+type Features = V.Vector Int
+
 -- TODO(tulloch) - make this more intelligent (support subsampling
 -- features for random forests, etc)
-getFeatures :: Examples -> V.Vector Int
+getFeatures :: Examples -> Features
 getFeatures examples = V.generate numFeatures id
   where
     numFeatures = (V.length . features' . V.head) examples
@@ -166,9 +170,10 @@ shouldSplit constraint currentLevel currentExamples candidateSplit =
 buildTreeAtLevel :: (Examples -> Double)
                  -> PB.SplittingConstraints
                  -> Int
+                 -> Features
                  -> Examples
                  -> DecisionTree
-buildTreeAtLevel leafWeight splittingConstraints level examples =
+buildTreeAtLevel leafWeight splittingConstraints level features examples =
     if shouldSplit splittingConstraints level examples bestSplit
     then Branch { _feature=_splitFeature bestSplit
                 , _value=_splitValue bestSplit
@@ -178,7 +183,7 @@ buildTreeAtLevel leafWeight splittingConstraints level examples =
     else Leaf {_value=leafWeight examples} where
         -- candidate splits
         candidates =
-            V.map (findBestSplit examples) (getFeatures examples)
+            V.map (findBestSplit examples) features
         -- best candidate from all the features
         bestSplit =
             V.maximumBy (compare `on` _averageGain) candidates
@@ -191,12 +196,13 @@ buildTreeAtLevel leafWeight splittingConstraints level examples =
                _splitValue bestSplit
         -- construct the next level of the tree
         recur =
-            buildTreeAtLevel leafWeight splittingConstraints (level + 1)
+            buildTreeAtLevel leafWeight splittingConstraints (level + 1) features
         leftExamples = V.takeWhile branchLeft orderedExamples
         rightExamples = V.dropWhile branchLeft orderedExamples
 
 buildTree :: (Examples -> Double)
           -> PB.SplittingConstraints
+          -> Features
           -> Examples
           -> DecisionTree
 buildTree leafWeight splittingConstraints =
@@ -246,11 +252,12 @@ logitLoss = LossFunction logitPrior logitLeaf logitWeight
 
 runBoostingRound :: LossFunction
                  -> PB.SplittingConstraints
+                 -> Features
                  -> Examples
                  -> Trees
                  -> DecisionTree
-runBoostingRound lossFunction splittingConstraints examples forest =
-    buildTree (leaf lossFunction) splittingConstraints weightedExamples
+runBoostingRound lossFunction splittingConstraints features examples forest =
+    buildTree (leaf lossFunction) splittingConstraints features weightedExamples
   where
     weightedExamples = V.map (\e -> e {PB.label=Just $ weightedLabel e}) examples
     weightedLabel = weight lossFunction forest
@@ -266,17 +273,35 @@ trainBoosting
 trainBoosting lossFunction numRounds splittingConstraints examples =
     V.map asPBTree' trees
   where
+    features = getFeatures examples
     trees =
         V.foldl addTree (priorTree examples) (V.enumFromTo 1 numRounds)
     priorTree = V.singleton . Leaf . prior lossFunction
     addTree currentForest _ = V.snoc currentForest weakLearner
       where
-        weakLearner = runBoostingRound lossFunction splittingConstraints examples currentForest
+        weakLearner = runBoostingRound lossFunction
+                                       splittingConstraints
+                                       features
+                                       examples
+                                       currentForest
 
 data RandomForestConfig = RandomForestConfig {
       _numRounds       :: Int,
-      _exampleFraction :: Double
+      _exampleFraction :: Double,
+      _featureFraction :: Double
     }
+
+withVector :: Monad m => ([a] -> m [b]) -> V.Vector a -> m (V.Vector b)
+withVector f xs = liftM V.fromList (f (V.toList xs))
+
+sampleWithReplacement :: MonadRandom m => Int -> V.Vector a -> m (V.Vector a)
+sampleWithReplacement n = withVector (replicateM n . uniform) -- liftM V.fromList $ replicateM n (uniform (V.toList xs))
+
+sampleWithoutReplacement :: (MonadRandom m) => Int -> V.Vector a -> m (V.Vector a)
+sampleWithoutReplacement n = withVector (liftM (take n) . shuffleM)
+
+proportion :: (Integral b, RealFrac a) => a -> V.Vector a1 -> b
+proportion p xs = ceiling $ (fromIntegral . V.length) xs * p
 
 -- | Trains a random forest with the given constraints.
 trainRandomForest
@@ -288,9 +313,12 @@ trainRandomForest
 trainRandomForest RandomForestConfig{..} splittingConstraints examples =
       V.mapM addSample (V.enumFromTo 1 _numRounds)
     where
-      numSubsampledExamples = ceiling $ (fromIntegral . V.length) examples * _exampleFraction
+      allFeatures = getFeatures examples
+      numSubsampledExamples = proportion _exampleFraction examples
+      numSubsampledFeatures = proportion _featureFraction allFeatures
       averageLabel e = (V.sum . V.map label') e / fromIntegral (V.length e)
       weakLearner = buildTree averageLabel splittingConstraints
       addSample _ = do
-        candidateExamples <- replicateM numSubsampledExamples (uniform $ V.toList examples)
-        return $ asPBTree' $ weakLearner (V.fromList candidateExamples)
+        candidateExamples <- sampleWithReplacement numSubsampledExamples examples
+        candidateFeatures <- sampleWithoutReplacement numSubsampledFeatures allFeatures
+        return $ asPBTree' $ weakLearner candidateFeatures candidateExamples

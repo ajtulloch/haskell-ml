@@ -53,6 +53,8 @@ library
         MachineLearning.LogisticRegression,
         MachineLearning.Util
 
+  ghc-options:     -Wall
+
   -- Modules included in this library but not exported.
   -- other-modules:
 
@@ -66,6 +68,7 @@ library
         containers,
         protocol-buffers,
         MonadRandom,
+        random-shuffle,
         QuickCheck,
         matrix
 
