@@ -20,7 +20,6 @@ features' example = V.generate (S.length features) (S.index features)
   where
     features = PB.features example
 
-
 norm :: Floating a => V.Vector a -> a
 norm x = sqrt $ dotProduct x x
 

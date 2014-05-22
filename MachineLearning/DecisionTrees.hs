@@ -20,6 +20,8 @@ module MachineLearning.DecisionTrees (
      -- * Training
      trainBoosting,
      trainRandomForest,
+     RandomForestConfig,
+     BoostingConfig,
      -- * Prediction
      predictForest) where
 
@@ -253,28 +255,38 @@ runBoostingRound lossFunction splittingConstraints features examples forest =
     weightedExamples = V.map (\e -> e {PB.label=Just $ weightedLabel e}) examples
     weightedLabel = weight lossFunction forest
 
+
+data BoostingConfig = BoostingConfig {
+      _numBoostingRounds :: Int,
+      _subsampleFraction :: Double
+    }
+
 -- | Trains a boosted decision tree with the given parameters
 trainBoosting
-  :: (Enum b, Num b) =>
+  :: MonadRandom m =>
      LossFunction
-     -> b
+     -> BoostingConfig
      -> PB.SplittingConstraints
      -> V.Vector PB.Example
-     -> V.Vector PB.TreeNode
-trainBoosting lossFunction numRounds splittingConstraints examples =
-    V.map asPBTree' trees
+     -> m (V.Vector PB.TreeNode)
+trainBoosting lossFunction BoostingConfig{..} splittingConstraints examples =
+    liftM (V.map asPBTree') trees
   where
+    numSubsampledExamples = proportion _subsampleFraction examples
     features = getFeatures examples
-    trees =
-        V.foldl addTree (priorTree examples) (V.enumFromTo 1 numRounds)
+
+    trees :: (MonadRandom m) => m (V.Vector DecisionTree)
+    trees = foldM (\current _ -> addTree current) (priorTree examples) [1.._numBoostingRounds]
+
+    priorTree :: Examples -> V.Vector DecisionTree
     priorTree = V.singleton . Leaf . prior lossFunction
-    addTree currentForest _ = V.snoc currentForest weakLearner
+
+    addTree :: (MonadRandom m) => V.Vector DecisionTree -> m (V.Vector DecisionTree)
+    addTree currentForest = liftM (V.snoc currentForest) weakLearner
       where
-        weakLearner = runBoostingRound lossFunction
-                                       splittingConstraints
-                                       features
-                                       examples
-                                       currentForest
+        weakLearner = do
+          candidateExamples <- sampleWithoutReplacement numSubsampledExamples examples
+          return $ runBoostingRound lossFunction splittingConstraints features candidateExamples currentForest
 
 data RandomForestConfig = RandomForestConfig {
       _numRounds       :: Int,
