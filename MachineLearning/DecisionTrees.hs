@@ -40,6 +40,8 @@ import qualified MachineLearning.Protobufs.SplittingConstraints as PB
 import qualified MachineLearning.Protobufs.TreeNode             as PB
 import           Text.ProtocolBuffers.Header                    (defaultValue)
 
+
+
 import           Control.Monad
 import           Control.Monad.Random
 import           System.Random.Shuffle
@@ -97,7 +99,7 @@ asPBTree' (Branch f v l r) =
                  }
 
 fromPBTree' :: PB.TreeNode -> DecisionTree
-fromPBTree' (PB.TreeNode feature splitValue left right leafValue _)
+fromPBTree' PB.TreeNode{..}
     | isJust leafValue = Leaf $ fromJust leafValue
     | otherwise = Branch { _feature=(fromIntegral . fromJust) feature
                          , _value=fromJust splitValue
@@ -106,17 +108,16 @@ fromPBTree' (PB.TreeNode feature splitValue left right leafValue _)
                          }
 
 addExample :: LossState -> PB.Example -> LossState
-addExample state example =
-    LossState { _numExamples=_numExamples state + 1
+addExample LossState{..} example =
+    LossState { _numExamples=_numExamples + 1
               , _averageLabel=newAverageLabel
               , _sumSquaredDivergence=newSumSquaredDivergence
               }
   where
-    newAverageLabel =
-        _averageLabel state + delta / fromIntegral (_numExamples state)
-    delta = label' example - _averageLabel state
+    newAverageLabel = _averageLabel + delta / fromIntegral _numExamples
+    delta = label' example - _averageLabel
     newDelta = label' example - newAverageLabel
-    newSumSquaredDivergence = _sumSquaredDivergence state +  delta * newDelta
+    newSumSquaredDivergence = _sumSquaredDivergence +  delta * newDelta
 
 sortFeature :: Int -> Examples -> Examples
 sortFeature feature =
@@ -137,7 +138,7 @@ findBestSplit examples feature =
 
 type Features = V.Vector Int
 
--- TODO(tulloch) - make this more intelligent (support subsampling
+-- TODO(tulloch) - make this more intelligent (support sub-sampling
 -- features for random forests, etc)
 getFeatures :: Examples -> Features
 getFeatures examples = V.generate numFeatures id
@@ -274,14 +275,8 @@ trainBoosting lossFunction BoostingConfig{..} splittingConstraints examples =
   where
     numSubsampledExamples = proportion _subsampleFraction examples
     features = getFeatures examples
-
-    trees :: (MonadRandom m) => m (V.Vector DecisionTree)
     trees = foldM (\current _ -> addTree current) (priorTree examples) [1.._numBoostingRounds]
-
-    priorTree :: Examples -> V.Vector DecisionTree
     priorTree = V.singleton . Leaf . prior lossFunction
-
-    addTree :: (MonadRandom m) => V.Vector DecisionTree -> m (V.Vector DecisionTree)
     addTree currentForest = liftM (V.snoc currentForest) weakLearner
       where
         weakLearner = do
@@ -300,7 +295,7 @@ withVector f xs = liftM V.fromList (f (V.toList xs))
 sampleWithReplacement :: MonadRandom m => Int -> V.Vector a -> m (V.Vector a)
 sampleWithReplacement n = withVector (replicateM n . uniform)
 
-sampleWithoutReplacement :: (MonadRandom m) => Int -> V.Vector a -> m (V.Vector a)
+sampleWithoutReplacement :: MonadRandom m => Int -> V.Vector a -> m (V.Vector a)
 sampleWithoutReplacement n = withVector (liftM (take n) . shuffleM)
 
 proportion :: (Integral b, RealFrac a) => a -> V.Vector a1 -> b
